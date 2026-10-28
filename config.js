@@ -6,5 +6,5 @@
 window.LCSO_CONFIG = {
   SUPABASE_URL: "https://qfvegxlbisygcdizxbcw.supabase.co",
   SUPABASE_KEY: "sb_publishable_o9Lg_NsvJYMT60lngPo3tA_CgyW4AMF",   // publishable key (safe in browser)
-  APP_VERSION: "0.6"
+  APP_VERSION: "0.7"
 };

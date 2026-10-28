@@ -251,7 +251,7 @@
 <script>
 (() => {
   const CFG = window.LCSO_CONFIG || {};
-  const RANKS = ["Sheriff","Chief Deputy","Major","Captain","Lieutenant","Sergeant","Investigator","Deputy","Detention Officer","Dispatcher","Civilian Staff"];
+  const RANKS = ["Sheriff","Chief Deputy","Major","Captain","Lieutenant","Sergeant","Investigator","Deputy","Detention Officer","Dispatcher","Civilian Staff","LCEMA Staff"];
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const store = { get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch{ return null; } },
@@ -304,7 +304,8 @@
     if (!me.active) { $("loginErr").textContent = "Your account is inactive. Contact an administrator."; await sb.auth.signOut(); return; }
     S.me = me;
     $("login").classList.add("hidden"); $("app").classList.remove("hidden");
-    $("meName").textContent = me.full_name; $("meRank").textContent = me.rank;
+    if (!me.setup_done) { const ok = await firstLoginSetup(); if (!ok) return; }
+    $("meName").textContent = S.me.full_name; $("meRank").textContent = S.me.rank;
     $("adminBtn").classList.toggle("hidden", !me.is_admin);
     await loadBasics();
     subscribe();
@@ -316,6 +317,54 @@
     if (asked) history.replaceState(null, "", location.pathname);
     checkUrgent();
     checkPush();
+  }
+
+  // ---------------- first sign-in: name, title, new password ----------------
+  function firstLoginSetup(){
+    return new Promise((resolve) => {
+      const guess = /@|^[a-z0-9._-]+$/.test(S.me.full_name) ? "" : S.me.full_name;
+      const el = modal(`<form class="modal" id="setupForm" autocomplete="off">
+        <img data-logo2 alt="" style="width:72px;height:72px;display:block;margin:0 auto 6px">
+        <h2 style="margin:0;text-align:center">Finish setting up your account</h2>
+        <p style="color:var(--muted);text-align:center;margin:4px 0 8px">This is how your name and title appear on your messages.</p>
+        <label for="suName">Full name</label>
+        <input type="text" id="suName" required maxlength="80" placeholder="e.g. John Smith" value="${esc(guess)}">
+        <label for="suTitle">Title / rank</label>
+        <select id="suTitle" required>
+          <option value="">Choose your title…</option>
+          ${RANKS.map(r => `<option>${esc(r)}</option>`).join("")}
+          <option value="__other">Other (type it in)</option>
+        </select>
+        <input type="text" id="suOther" class="hidden" maxlength="40" placeholder="Your title" style="margin-top:8px">
+        <label for="suPw">New password (8+ characters)</label>
+        <input type="password" id="suPw" required minlength="8" autocomplete="new-password">
+        <label for="suPw2">Confirm new password</label>
+        <input type="password" id="suPw2" required minlength="8" autocomplete="new-password">
+        <button class="btn full" type="submit" id="suSave">Save and continue</button>
+        <div class="err" id="suErr"></div>
+        <div style="text-align:center;margin-top:6px"><button type="button" class="acklink" id="suOut">Sign out</button></div>
+      </form>`);
+      const logo = document.querySelector("img[data-logo]"); if (logo) el.querySelector("[data-logo2]").src = logo.src;
+      const sel = el.querySelector("#suTitle"), other = el.querySelector("#suOther"), err = el.querySelector("#suErr");
+      sel.onchange = () => { other.classList.toggle("hidden", sel.value !== "__other"); other.required = sel.value === "__other"; };
+      el.querySelector("#suOut").onclick = async () => { closeModal(); await sb.auth.signOut(); resolve(false); };
+      el.querySelector("#setupForm").onsubmit = async (e) => {
+        e.preventDefault(); err.textContent = "";
+        const name = el.querySelector("#suName").value.trim();
+        const title = sel.value === "__other" ? other.value.trim() : sel.value;
+        const pw = el.querySelector("#suPw").value, pw2 = el.querySelector("#suPw2").value;
+        if (name.length < 3) { err.textContent = "Enter your full name."; return; }
+        if (!title) { err.textContent = "Choose your title."; return; }
+        if (pw.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
+        if (pw !== pw2) { err.textContent = "Passwords don't match."; return; }
+        el.querySelector("#suSave").disabled = true;
+        const p = await sb.auth.updateUser({ password: pw });
+        if (p.error && !/different from the old/i.test(p.error.message)) { err.textContent = p.error.message; el.querySelector("#suSave").disabled = false; return; }
+        const { data, error } = await sb.from("profiles").update({ full_name: name, rank: title, setup_done: true }).eq("id", S.user.id).select().single();
+        if (error) { err.textContent = "Couldn't save: " + error.message; el.querySelector("#suSave").disabled = false; return; }
+        S.me = data; closeModal(); toast("You're all set."); resolve(true);
+      };
+    });
   }
 
   async function loadBasics(){
