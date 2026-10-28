@@ -59,11 +59,23 @@ The repo can be public — it contains no passwords or data. The page is marked 
 
 **Phone tip:** in Safari/Chrome, use "Add to Home Screen" so it opens like an app. On iPhone, alerts only work after adding it to the Home Screen.
 
+### 7. Phone notifications (v0.4)
+1. Run `supabase/002_push.sql` in the SQL Editor.
+2. Supabase → Edge Functions → Deploy a new function → Via Editor. Name it `notify`, paste `supabase/functions/notify/index.ts`, deploy. In the function's Settings, turn **off** "Verify JWT with legacy secret" (the function checks sign-in itself).
+3. No keys to enter — the function creates its own notification signing keys on first use and stores them in a server-only table.
+
+**Users turn alerts on once per device:**
+- **iPhone (iOS 16.4+):** Safari → Share → **Add to Home Screen** → open LCSO Connect from the icon → **Turn on alerts** → Allow.
+- **Android / computer:** open the site in Chrome or Edge → **Turn on alerts** → Allow.
+- **☰ menu → Alerts:** choose All messages, Priority + Urgent, or Urgent only; send a test alert.
+
+Notifications follow the phone's Silent/Focus settings (only a native app with Apple Critical Alerts can override them).
+
 ---
 
 ## Pilot rules (please share with users)
 - **No CJI, case details, or personal info about victims, witnesses or suspects.** The free Supabase tier is not CJIS-compliant. Use it for schedules, details, road closures, announcements, and call-outs.
-- Alerts appear only while the page is open (in a tab or on the home screen). True background push to locked phones is a planned next step.
+- Alerts reach locked phones once each person turns them on (see step 7). They do not override Silent/Do Not Disturb.
 - Deactivate departing employees in **Admin** immediately (unchecking **Active** cuts off access), then delete them in Supabase.
 
 ## Known limits (v0.1)
@@ -72,6 +84,6 @@ The repo can be public — it contains no passwords or data. The page is marked 
 - Urgent pop-ups re-appear for 3 days until acknowledged.
 
 ## Likely next steps
-1. Background push notifications (Web Push) so urgent alerts reach locked phones
-2. Read receipts for Routine messages
+1. Read receipts
+2. Native iPhone/Android app (Capacitor) with Apple Critical Alerts so Urgent can break through Silent mode for Routine messages
 3. Move to a CJIS-capable host (e.g. county Microsoft 365 / Azure Government) if case information will be shared
