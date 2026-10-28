@@ -1,11 +1,14 @@
-// LCSO Connect — "notify" Edge Function (v0.4)
-// Sends phone/desktop notifications (web push) for new messages.
+// LCSO Connect — "notify" Edge Function (v0.6)
+// Sends phone/desktop notifications (web push) for new messages, and removes
+// attachment files older than ATTACHMENT_DAYS (message text is kept).
 // Deploy in Supabase > Edge Functions with the name: notify
 //
 // Actions (POST JSON):
 //   { action: "key" }                 -> returns the public key devices use to subscribe
-//   { action: "send", message_id: N } -> notifies the group (caller must be the sender)
+//   { action: "send", message_id: N } -> notifies the group (caller must be the sender);
+//                                        also runs the attachment cleanup
 //   { action: "test" }                -> sends a test notification to the caller's own devices
+//   { action: "cleanup" }             -> admins only: run the attachment cleanup now
 //
 // The signing keys are created automatically on first use and stored in the
 // server-only push_config table. No secret needs to be typed or pasted anywhere.
@@ -36,6 +39,31 @@ const RANK = { routine: 0, priority: 1, urgent: 2 } as Record<string, number>;
 const LEVEL = { all: 0, priority: 1, urgent: 2 } as Record<string, number>;
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+
+// ---- Attachment retention ----
+const ATTACHMENT_DAYS = 7;
+
+// Deletes files attached to messages older than ATTACHMENT_DAYS. The message
+// stays; attachment_path is cleared and attachment_name is kept so the app can
+// show "removed after 7 days".
+async function cleanupAttachments() {
+  const cutoff = new Date(Date.now() - ATTACHMENT_DAYS * 86400000).toISOString();
+  const { data: old, error } = await db.from("messages")
+    .select("id, attachment_path")
+    .not("attachment_path", "is", null)
+    .lt("created_at", cutoff)
+    .limit(500);
+  if (error) { console.error("cleanup query", error.message); return { removed: 0, error: error.message }; }
+  let removed = 0;
+  for (let i = 0; i < (old || []).length; i += 100) {
+    const batch = old!.slice(i, i + 100);
+    const { error: rmErr } = await db.storage.from("attachments").remove(batch.map((m) => m.attachment_path as string));
+    if (rmErr) { console.error("cleanup remove", rmErr.message); continue; }
+    await db.from("messages").update({ attachment_path: null }).in("id", batch.map((m) => m.id));
+    removed += batch.length;
+  }
+  return { removed };
+}
 
 async function vapid() {
   let { data } = await db.from("push_config").select("public_key, private_key").eq("id", 1).maybeSingle();
@@ -96,7 +124,15 @@ Deno.serve(async (req) => {
     return json({ ok: true, devices: (subs || []).length, ...r });
   }
 
+  if (input.action === "cleanup") {
+    const { data: admin } = await db.from("profiles").select("is_admin").eq("id", uid).single();
+    if (!admin?.is_admin) return json({ error: "Admins only" }, 403);
+    return json({ ok: true, days: ATTACHMENT_DAYS, ...(await cleanupAttachments()) });
+  }
+
   if (input.action === "send") {
+    // Housekeeping first, so it runs whenever the app is in use
+    const cleanup = await cleanupAttachments().catch((e) => ({ removed: 0, error: String(e) }));
     const id = Number(input.message_id);
     const { data: msg } = await db.from("messages").select("*").eq("id", id).single();
     if (!msg) return json({ error: "Message not found" }, 404);
@@ -111,11 +147,11 @@ Deno.serve(async (req) => {
     const { data: group } = await db.from("groups").select("name").eq("id", msg.group_id).single();
     const { data: members } = await db.from("group_members").select("user_id").eq("group_id", msg.group_id);
     const ids = (members || []).map((m) => m.user_id).filter((u) => u !== uid);
-    if (!ids.length) return json({ ok: true, sent: 0 });
+    if (!ids.length) return json({ ok: true, sent: 0, cleanup });
 
     const { data: people } = await db.from("profiles").select("id, active, notify_level").in("id", ids);
     const want = (people || []).filter((p) => p.active && RANK[msg.priority] >= (LEVEL[p.notify_level] ?? 0)).map((p) => p.id);
-    if (!want.length) return json({ ok: true, sent: 0 });
+    if (!want.length) return json({ ok: true, sent: 0, cleanup });
 
     const { data: subs } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth").in("user_id", want);
     const label = msg.priority === "urgent" ? "URGENT — " : msg.priority === "priority" ? "PRIORITY — " : "";
@@ -127,7 +163,7 @@ Deno.serve(async (req) => {
       url: `${SITE_URL}?group=${msg.group_id}`,
       urgent: msg.priority === "urgent",
     }, msg.priority === "urgent");
-    return json({ ok: true, recipients: want.length, devices: (subs || []).length, ...r });
+    return json({ ok: true, recipients: want.length, devices: (subs || []).length, ...r, cleanup });
   }
 
   return json({ error: "Unknown action" }, 400);
