@@ -277,6 +277,14 @@
     return sameDay ? t : d.toLocaleDateString([], {month:"short", day:"numeric"}) + " · " + t;
   }
   function person(id){ return S.people[id] || {full_name:"Unknown", rank:""}; }
+  // Fetch any profiles we don't have yet (people added or set up after this page loaded)
+  async function ensurePeople(ids){
+    const missing = [...new Set(ids)].filter(id => id && !S.people[id]);
+    if (!missing.length) return false;
+    const { data } = await sb.from("profiles").select("id,full_name,rank,is_admin,active").in("id", missing);
+    (data||[]).forEach(r => S.people[r.id] = r);
+    return !!(data && data.length);
+  }
   function modal(html){ const r=$("modalRoot"); r.innerHTML='<div class="overlay">'+html+'</div>'; return r.firstChild; }
   function closeModal(){ $("modalRoot").innerHTML=""; }
   function isPhone(){ return window.matchMedia("(max-width:760px)").matches; }
@@ -415,6 +423,8 @@
     S.memberCount = S.members.length;
     $("chatMeta").textContent = `${S.memberCount} member${S.memberCount===1?"":"s"} · ${canSend ? "You can send" : "Receive only"}`;
     await loadAcks(S.messages.map(m => m.id));
+    await ensurePeople([...S.members, ...S.messages.map(m => m.sender_id), ...Object.values(S.acks).flat()]);
+    if (S.current !== gid) return;
     renderFeed(true);
   }
 
@@ -469,8 +479,9 @@
     return true;
   }
 
-  function showAckList(id){
+  async function showAckList(id){
     const m = S.messages.find(x => x.id === id); if (!m) return;
+    await ensurePeople([...S.members, ...(S.acks[id] || [])]);
     const acked = new Set(S.acks[id] || []);
     const rows = S.members.filter(u => u !== m.sender_id)
       .sort((a,b) => person(a).full_name.localeCompare(person(b).full_name))
@@ -537,7 +548,7 @@
       .on("postgres_changes", { event:"INSERT", schema:"public", table:"acknowledgments" }, ({ new: a }) => {
         if (S.messages.some(m => m.id === a.message_id)) {
           const list = (S.acks[a.message_id] ||= []);
-          if (!list.includes(a.user_id)) { list.push(a.user_id); renderFeed(); }
+          if (!list.includes(a.user_id)) { list.push(a.user_id); ensurePeople([a.user_id]).finally(() => renderFeed()); }
         }
       })
       .subscribe();
@@ -551,7 +562,7 @@
     if (!(m.group_id in S.myMembership)) return;
     const mine = m.sender_id === S.user.id;
     if (m.group_id === S.current) {
-      if (!S.messages.some(x => x.id === m.id)) { S.messages.push(m); renderFeed(); }
+      if (!S.messages.some(x => x.id === m.id)) { S.messages.push(m); ensurePeople([m.sender_id]).finally(() => renderFeed()); }
     } else if (!mine) {
       S.unread[m.group_id] = (m.priority === "urgent" || S.unread[m.group_id] === "urgent") ? "urgent" : "new";
       store.set("lcso_unread", S.unread); renderGroups();
