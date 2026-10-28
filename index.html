@@ -91,6 +91,7 @@
   .pill{font-family:"Barlow Condensed";font-weight:700;font-size:12px;letter-spacing:.08em;padding:1px 8px;border-radius:4px;color:#fff}
   .pill.priority{background:var(--amber)} .pill.urgent{background:var(--red)}
   .msg .body{margin-top:6px;white-space:pre-wrap;word-wrap:break-word;line-height:1.4}
+  .att.expired{color:var(--muted);cursor:default;background:#F3F2EE}
   .att{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:#FAFAF8;color:var(--blue);cursor:pointer;font-size:14px}
   .acks{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
   .acklink{color:var(--blue);cursor:pointer;text-decoration:underline;background:none;border:0;padding:0}
@@ -207,6 +208,7 @@
           <label class="btn ghost" style="margin:0;font-weight:600" for="fileIn">&#128206; Attach</label>
           <input type="file" id="fileIn" class="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*">
           <span class="filechip" id="fileChip"></span>
+          <span class="filechip" style="font-size:12px">Files are kept 7 days.</span>
           <span style="flex:1"></span>
           <button class="btn" type="submit" id="sendBtn">Send</button>
         </div>
@@ -399,7 +401,7 @@
           <span class="time">${fmtTime(m.created_at)}</span>
         </div>
         <div class="body">${esc(m.body)}</div>
-        ${m.attachment_path ? `<button class="att" data-file="${esc(m.attachment_path)}">&#128206; ${esc(m.attachment_name || "Attachment")}</button>` : ""}
+        ${m.attachment_path ? `<button class="att" data-file="${esc(m.attachment_path)}">&#128206; ${esc(m.attachment_name || "Attachment")}</button>` : m.attachment_name ? `<span class="att expired">&#128206; <s>${esc(m.attachment_name)}</s>&nbsp;removed after 7 days</span>` : ""}
         ${ackHtml}
       </div>`;
     }).join("");
@@ -430,7 +432,7 @@
 
   async function openFile(path){
     const { data, error } = await sb.storage.from("attachments").createSignedUrl(path, 300);
-    if (error) { toast("Couldn't open the file."); return; }
+    if (error) { toast("This file is no longer available. Attachments are removed after 7 days."); return; }
     window.open(data.signedUrl, "_blank", "noopener");
   }
 
@@ -610,7 +612,7 @@
       <h2>URGENT</h2>
       <div style="color:var(--muted)">${esc(g)} · ${esc(person(m.sender_id).full_name)}, ${esc(person(m.sender_id).rank)} · ${fmtTime(m.created_at)}</div>
       <div class="body">${esc(m.body)}</div>
-      ${m.attachment_path ? `<button class="att" id="uFile">&#128206; ${esc(m.attachment_name||"Attachment")}</button>` : ""}
+      ${m.attachment_path ? `<button class="att" id="uFile">&#128206; ${esc(m.attachment_name||"Attachment")}</button>` : m.attachment_name ? `<span class="att expired">&#128206; <s>${esc(m.attachment_name)}</s>&nbsp;removed after 7 days</span>` : ""}
       <button class="btn red full" id="uAck" style="font-size:18px;padding:14px">Acknowledge</button>
     </div>`);
     if (m.attachment_path) el.querySelector("#uFile").onclick = () => openFile(m.attachment_path);
