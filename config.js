@@ -4,7 +4,7 @@
 // web page; the database security rules are what protect the data.
 // NEVER put the "service_role" / secret key here.
 window.LCSO_CONFIG = {
-  SUPABASE_URL: "",        // e.g. "https://abcdxyz.supabase.co"
-  SUPABASE_KEY: "",        // publishable / anon public key
-  APP_VERSION: "0.1"
+  SUPABASE_URL: "https://qfvegxlbisygcdizxbcw.supabase.co",
+  SUPABASE_KEY: "sb_publishable_o9Lg_NsvJYMT60lngPo3tA_CgyW4AMF",   // publishable key (safe in browser)
+  APP_VERSION: "0.2"
 };
