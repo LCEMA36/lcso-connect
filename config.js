@@ -1,0 +1,10 @@
+// LCSO Connect — connection settings
+// Fill these in from Supabase > Project Settings > API (see README step 4).
+// Use the PUBLISHABLE (or "anon public") key ONLY. It is designed to sit in a
+// web page; the database security rules are what protect the data.
+// NEVER put the "service_role" / secret key here.
+window.LCSO_CONFIG = {
+  SUPABASE_URL: "",        // e.g. "https://abcdxyz.supabase.co"
+  SUPABASE_KEY: "",        // publishable / anon public key
+  APP_VERSION: "0.1"
+};
